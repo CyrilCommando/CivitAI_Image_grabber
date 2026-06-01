@@ -730,7 +730,35 @@ class CivitaiDownloader:
         try:
             async with self.semaphore:
                 client = await self._get_client()
+                
+                # Civitai has a strange bug where sometimes video files aren't served from the /default url, it needs /original, but then sometimes
+                # it can't be served from that url. Sometimes it needs a specific url with a suffix such as
+                # 450x<auto>_.webm_hm in order to find a usable video file.
+                # That suffix seems to be the only one ever used however, so we hardcode it and build it here.
+
+                response = await client.head(
+                    target_url,
+                    follow_redirects=True
+                )
+
+                if response.history.__len__() > 0:
+                    if is_video: 
+                        target_url = response.url.__str__()
+                        if target_url.__contains__("/default"):
+                            target_url = target_url.replace("/default", "/original")
+                
+                response = await client.head(
+                    target_url,
+                    follow_redirects=True
+                )
+
+                if is_video: 
+                    if response.status_code == 404:
+                        target_url = target_url.replace("/original", "/450x<auto>_.webm_hm")
+
                 async with client.stream("GET", target_url) as response:
+
+
                     if 400 <= response.status_code < 500 and response.status_code not in RETRYABLE_STATUS_CODES:
                         return False, None, f"HTTP Client Error {response.status_code} {response.reason_phrase}" # Not retryable
                     response.raise_for_status() # Raises for >=400. Retry logic catches 5xx.
@@ -770,19 +798,19 @@ class CivitaiDownloader:
                     try:
                         os.makedirs(final_dir, exist_ok=True)
                         async with aiofiles.open(final_image_path, "wb") as file:
-                             if first_chunk:
-                                 await file.write(first_chunk)
-                                 progress_bar.update(len(first_chunk)); downloaded_size += len(first_chunk)
-                             async for chunk in byte_iter:
-                                 await file.write(chunk)
-                                 progress_bar.update(len(chunk)); downloaded_size += len(chunk)
+                            if first_chunk:
+                                await file.write(first_chunk)
+                                progress_bar.update(len(first_chunk)); downloaded_size += len(first_chunk)
+                            async for chunk in byte_iter:
+                                await file.write(chunk)
+                                progress_bar.update(len(chunk)); downloaded_size += len(chunk)
                     finally: progress_bar.close()
 
                     # Final Checks
                     if total_size != 0 and downloaded_size < total_size:
-                         try: os.remove(final_image_path); 
-                         except OSError: pass
-                         return False, None, "Incomplete download"
+                        try: os.remove(final_image_path); 
+                        except OSError: pass
+                        return False, None, "Incomplete download"
                     self.logger.debug(f"Successfully downloaded: {final_image_path}")
                     return True, final_image_path, None
 
