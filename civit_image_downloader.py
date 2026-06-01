@@ -746,13 +746,12 @@ class CivitaiDownloader:
                         target_url = response.url.__str__()
                         if target_url.__contains__("/default"):
                             target_url = target_url.replace("/default", "/original")
-                
-                response = await client.head(
-                    target_url,
-                    follow_redirects=True
-                )
 
                 if is_video: 
+                    response = await client.head(
+                        target_url,
+                        follow_redirects=True
+                    )
                     if response.status_code == 404:
                         target_url = target_url.replace("/original", "/450x<auto>_.webm_hm")
 
